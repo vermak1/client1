@@ -1,100 +1,67 @@
-﻿using System;
+﻿using MyShop.CommonLib;
+using System;
 using System.Net.Sockets;
-using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Client
 {
-    public class Client : IDisposable
+    internal class Client : IDisposable
     {
-        private readonly Socket _socket;
+        private readonly Socket _serverSocket;
 
-        private const String SERVER_URL = "127.0.0.1";
+        private Boolean _logged;
+        
+        private const String SERVER_IP = "127.0.0.1";
 
         private const Int32 SERVER_PORT = 6667;
 
-        private const Int32 BUFFER_SIZE = 512;
 
         public Client()
         {
-            _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _logged = false;
         }
 
-
-        public Boolean ConnectToServer()
+        public async Task StartAsync()
         {
             try
             {
-                _socket.Connect(SERVER_URL, SERVER_PORT);
-                if (_socket.Connected)
-                {
-                    Console.WriteLine("Successfully connected");
-                }
-            }
-            catch (SocketException ex)
-            {
-                Console.WriteLine(ex.Message);
-                throw;
-            }
-            return _socket.Connected;
-        }
-
-        private void ReceiveMessage()
-        {
-            try
-            {
-                Byte[] buffer = new Byte[BUFFER_SIZE];
-                StringBuilder sb = new StringBuilder();
-                do
-                {
-                    Int32 bytes = _socket.Receive(buffer, BUFFER_SIZE, 0);
-                    sb.Append(Encoding.UTF8.GetString(buffer, 0, bytes));
-                }
-                while (_socket.Available != 0);
-
-                Console.WriteLine("[{0}]\t{1}", DateTime.Now, sb.ToString());
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Failed to receive message from server: {0}", ex.Message);
-                throw;
-            }
-            
-        }
-
-        private void SendMessage(String message)
-        {
-            try
-            {
-                Byte[] buffer = Encoding.UTF8.GetBytes(message);
-                _socket.Send(buffer, buffer.Length, SocketFlags.None);
-            }
-            catch (Exception ex) 
-            {
-                Console.WriteLine("Failed to send message to server: {0}", ex.Message);
-                throw;
-            }
-        }
-
-        public void SendReceiveCycle()
-        {
-            try
-            {
-                while (true)
-                {
-                    SendMessage(Console.ReadLine());
-                    ReceiveMessage();
-                }
+                await ConnectToServerAsync(TimeSpan.FromSeconds(10));
+                await Messanger.SendAndReceiveCycle(_serverSocket, _logged);
             }
             catch(Exception ex)
             {
-                Console.WriteLine("There is a fail within SendReceiveCycle: {0}", ex.Message);
+                Console.WriteLine("Error in Start method occured, message: {0}", ex.Message);
                 throw;
+            }
+        }
+
+        private async Task ConnectToServerAsync(TimeSpan timeToRetry)
+        {
+            while (true)
+            {
+                try
+                {
+                    await _serverSocket.ConnectAsync(SERVER_IP, SERVER_PORT);
+                    if (_serverSocket.Connected)
+                    {
+                        Console.WriteLine("Successfully connected to server...");
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Failed to connect to server\nError: {0}", ex.Message);
+                    Console.WriteLine("Waiting {0} seconds before retry", timeToRetry.TotalSeconds);
+                    Thread.Sleep(timeToRetry);
+                }
             }
         }
 
         public void Dispose()
         {
-            _socket?.Dispose();
+            _serverSocket?.Dispose();
         }
     }
 }
